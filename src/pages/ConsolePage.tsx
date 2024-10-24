@@ -45,6 +45,16 @@ interface Coordinates {
 }
 
 /**
+ * Type for video transcript
+ */
+
+interface TranscriptSegment {
+  start_time_ms: number;
+  end_time_ms: number;
+  text: string;
+};
+
+/**
  * Type for all event logs
  */
 interface RealtimeEvent {
@@ -124,6 +134,17 @@ export function ConsolePage() {
     lng: -122.418137,
   });
   const [marker, setMarker] = useState<Coordinates | null>(null);
+
+  /**
+   * State variables for video transcript
+   * TODO: 
+   *  1. colocar input para o usuário inserir a url ou ID de algum vídeo do YOUTUBE
+   *  2. Alterar o useEffect para para quando o videoID for atualizado
+   *  3. Salvar o videoCurrentTime a cada segundo ou quando clicar no botão de começar a falar (ou quando começar a escurar o usário, no caso do modo VAD)
+   */
+  const [videoId, setVideoId] = useState<string | null>(null);
+  const [videoCurrentTime, setVideoCurrentTime] = useState<number | null>(null);
+  const [videoTranscript, setVideoTranscript] = useState<TranscriptSegment[]>([]);
 
   /**
    * Utility for formatting the timing of logs
@@ -270,6 +291,26 @@ export function ConsolePage() {
   };
 
   /**
+   * Get the video transcript
+   *  */ 
+  const getTranscript = async (videoId: string) => {
+    const response = await fetch(`https://api.clipping.ai/miscelaneous/youtube_vtt?video_url=https://www.youtube.com/watch?v=${videoId}`);
+    const data = await response.json();
+    setVideoTranscript(data);
+  }
+
+
+  /**
+   * Alterar o embed do vídeo e carregar Transcript
+   */
+  useEffect(() => {
+    if (videoId) {
+      getTranscript(videoId);
+    }
+      
+  }, [videoId]);
+
+  /**
    * Auto-scroll the event logs
    */
   useEffect(() => {
@@ -413,45 +454,20 @@ export function ConsolePage() {
     );
     client.addTool(
       {
-        name: 'get_weather',
-        description:
-          'Retrieves the weather for a given lat, lng coordinate pair. Specify a label for the location.',
+        name: 'get_video_transcript',
+        description: 'Gets the transcript of the current video. Just the context window of a few minutes until the current time.',
         parameters: {
           type: 'object',
           properties: {
-            lat: {
-              type: 'number',
-              description: 'Latitude',
-            },
-            lng: {
-              type: 'number',
-              description: 'Longitude',
-            },
-            location: {
-              type: 'string',
-              description: 'Name of the location',
-            },
           },
-          required: ['lat', 'lng', 'location'],
+          required: [],
         },
       },
-      async ({ lat, lng, location }: { [key: string]: any }) => {
-        setMarker({ lat, lng, location });
-        setCoords({ lat, lng, location });
-        const result = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,wind_speed_10m`
-        );
-        const json = await result.json();
-        const temperature = {
-          value: json.current.temperature_2m as number,
-          units: json.current_units.temperature_2m as string,
-        };
-        const wind_speed = {
-          value: json.current.wind_speed_10m as number,
-          units: json.current_units.wind_speed_10m as string,
-        };
-        setMarker({ lat, lng, location, temperature, wind_speed });
-        return json;
+      async () => {
+        const filtered_transcript = videoTranscript.filter(function (item) {
+          return item.start_time_ms <= (videoCurrentTime || 0) || item.end_time_ms >= (videoCurrentTime || 0) - 240000; 
+        });
+        return JSON.stringify(filtered_transcript); 
       }
     );
 
@@ -508,7 +524,7 @@ export function ConsolePage() {
       <div className="content-top">
         <div className="content-title">
           <img src="/openai-logomark.svg" />
-          <span>realtime console</span>
+          <span>TALK TO ANY YOUTUBE VIDEO</span>
         </div>
         <div className="content-api-key">
           {!LOCAL_RELAY_SERVER_URL && (
@@ -524,78 +540,10 @@ export function ConsolePage() {
       </div>
       <div className="content-main">
         <div className="content-logs">
-          <div className="content-block events">
-            <div className="visualization">
-              <div className="visualization-entry client">
-                <canvas ref={clientCanvasRef} />
-              </div>
-              <div className="visualization-entry server">
-                <canvas ref={serverCanvasRef} />
-              </div>
-            </div>
-            <div className="content-block-title">events</div>
+          <div className="content-block video">
+            <div className="content-block-title">Video: Título</div>
             <div className="content-block-body" ref={eventsScrollRef}>
-              {!realtimeEvents.length && `awaiting connection...`}
-              {realtimeEvents.map((realtimeEvent, i) => {
-                const count = realtimeEvent.count;
-                const event = { ...realtimeEvent.event };
-                if (event.type === 'input_audio_buffer.append') {
-                  event.audio = `[trimmed: ${event.audio.length} bytes]`;
-                } else if (event.type === 'response.audio.delta') {
-                  event.delta = `[trimmed: ${event.delta.length} bytes]`;
-                }
-                return (
-                  <div className="event" key={event.event_id}>
-                    <div className="event-timestamp">
-                      {formatTime(realtimeEvent.time)}
-                    </div>
-                    <div className="event-details">
-                      <div
-                        className="event-summary"
-                        onClick={() => {
-                          // toggle event details
-                          const id = event.event_id;
-                          const expanded = { ...expandedEvents };
-                          if (expanded[id]) {
-                            delete expanded[id];
-                          } else {
-                            expanded[id] = true;
-                          }
-                          setExpandedEvents(expanded);
-                        }}
-                      >
-                        <div
-                          className={`event-source ${
-                            event.type === 'error'
-                              ? 'error'
-                              : realtimeEvent.source
-                          }`}
-                        >
-                          {realtimeEvent.source === 'client' ? (
-                            <ArrowUp />
-                          ) : (
-                            <ArrowDown />
-                          )}
-                          <span>
-                            {event.type === 'error'
-                              ? 'error!'
-                              : realtimeEvent.source}
-                          </span>
-                        </div>
-                        <div className="event-type">
-                          {event.type}
-                          {count && ` (${count})`}
-                        </div>
-                      </div>
-                      {!!expandedEvents[event.event_id] && (
-                        <div className="event-payload">
-                          {JSON.stringify(event, null, 2)}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+              Vídeo ID to be embeded: {videoId}. If videoId is null, show a text input to enter the video Id
             </div>
           </div>
           <div className="content-block conversation">
@@ -692,30 +640,78 @@ export function ConsolePage() {
           </div>
         </div>
         <div className="content-right">
-          <div className="content-block map">
-            <div className="content-block-title">get_weather()</div>
-            <div className="content-block-title bottom">
-              {marker?.location || 'not yet retrieved'}
-              {!!marker?.temperature && (
-                <>
-                  <br />
-                  🌡️ {marker.temperature.value} {marker.temperature.units}
-                </>
-              )}
-              {!!marker?.wind_speed && (
-                <>
-                  {' '}
-                  🍃 {marker.wind_speed.value} {marker.wind_speed.units}
-                </>
-              )}
+          <div className="content-block events">
+            <div className="visualization">
+              <div className="visualization-entry client">
+                <canvas ref={clientCanvasRef} />
+              </div>
+              <div className="visualization-entry server">
+                <canvas ref={serverCanvasRef} />
+              </div>
             </div>
-            <div className="content-block-body full">
-              {coords && (
-                <Map
-                  center={[coords.lat, coords.lng]}
-                  location={coords.location}
-                />
-              )}
+            <div className="content-block-title">events</div>
+            <div className="content-block-body" ref={eventsScrollRef}>
+              {!realtimeEvents.length && `awaiting connection...`}
+              {realtimeEvents.map((realtimeEvent, i) => {
+                const count = realtimeEvent.count;
+                const event = { ...realtimeEvent.event };
+                if (event.type === 'input_audio_buffer.append') {
+                  event.audio = `[trimmed: ${event.audio.length} bytes]`;
+                } else if (event.type === 'response.audio.delta') {
+                  event.delta = `[trimmed: ${event.delta.length} bytes]`;
+                }
+                return (
+                  <div className="event" key={event.event_id}>
+                    <div className="event-timestamp">
+                      {formatTime(realtimeEvent.time)}
+                    </div>
+                    <div className="event-details">
+                      <div
+                        className="event-summary"
+                        onClick={() => {
+                          // toggle event details
+                          const id = event.event_id;
+                          const expanded = { ...expandedEvents };
+                          if (expanded[id]) {
+                            delete expanded[id];
+                          } else {
+                            expanded[id] = true;
+                          }
+                          setExpandedEvents(expanded);
+                        }}
+                      >
+                        <div
+                          className={`event-source ${
+                            event.type === 'error'
+                              ? 'error'
+                              : realtimeEvent.source
+                          }`}
+                        >
+                          {realtimeEvent.source === 'client' ? (
+                            <ArrowUp />
+                          ) : (
+                            <ArrowDown />
+                          )}
+                          <span>
+                            {event.type === 'error'
+                              ? 'error!'
+                              : realtimeEvent.source}
+                          </span>
+                        </div>
+                        <div className="event-type">
+                          {event.type}
+                          {count && ` (${count})`}
+                        </div>
+                      </div>
+                      {!!expandedEvents[event.event_id] && (
+                        <div className="event-payload">
+                          {JSON.stringify(event, null, 2)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
           <div className="content-block kv">
