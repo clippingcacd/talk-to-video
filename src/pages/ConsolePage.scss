@@ -46,6 +46,26 @@
       flex-direction: column;
       max-height: 100%;
       width: 100%;
+      .content-block-video-url {
+        display: flex;
+        align-items: center;
+        height: 48px;
+        gap: 8px;
+        // padding: 0px 8px;
+        input {
+          all: unset;
+          width: 100%;
+          border: 1px solid #ececf1;
+          height: 42px;
+          border-radius: 1000px;
+          padding: 0px 16px;
+          transition: all 0.2s;
+        }
+
+        input:hover {
+          border: 1px solid #d8d8d8;
+        }
+      }
       .content-block-title {
         flex-shrink: 0;
         padding-top: 16px;
@@ -56,10 +76,10 @@
         color: #6e6e7f;
         position: relative;
         flex-grow: 1;
-        padding: 8px 0px;
-        padding-top: 4px;
+        padding: 24px 0px;
         line-height: 1.2em;
         overflow: auto;
+
         &.full {
           padding: 0px;
         }

@@ -15,11 +15,13 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 
 import { RealtimeClient } from '@openai/realtime-api-beta';
 import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
+import { X, Edit, Zap, ArrowUp, ArrowDown, Search } from 'react-feather';
+import ReactPlayer from 'react-player';
+
 import { WavRecorder, WavStreamPlayer } from '../lib/wavtools/index.js';
 import { instructions } from '../utils/conversation_config.js';
 import { WavRenderer } from '../utils/wav_renderer';
 
-import { X, Edit, Zap, ArrowUp, ArrowDown } from 'react-feather';
 import { Button } from '../components/button/Button';
 import { Toggle } from '../components/toggle/Toggle';
 import { Map } from '../components/Map';
@@ -52,7 +54,7 @@ interface TranscriptSegment {
   start_time_ms: number;
   end_time_ms: number;
   text: string;
-};
+}
 
 /**
  * Type for all event logs
@@ -112,6 +114,7 @@ export function ConsolePage() {
   const eventsScrollHeightRef = useRef(0);
   const eventsScrollRef = useRef<HTMLDivElement>(null);
   const startTimeRef = useRef<string>(new Date().toISOString());
+  const reactPlayerRef = useRef<ReactPlayer>(null);
 
   /**
    * All of our variables for displaying application state
@@ -137,14 +140,19 @@ export function ConsolePage() {
 
   /**
    * State variables for video transcript
-   * TODO: 
+   * TODO:
    *  1. colocar input para o usuário inserir a url ou ID de algum vídeo do YOUTUBE
    *  2. Alterar o useEffect para para quando o videoID for atualizado
    *  3. Salvar o videoCurrentTime a cada segundo ou quando clicar no botão de começar a falar (ou quando começar a escurar o usário, no caso do modo VAD)
    */
+  const [videoUrlInput, setVideoUrlInput] = useState<string>('');
+  const [videoUrl, setVideoUrl] = useState<URL>();
   const [videoId, setVideoId] = useState<string | null>(null);
+  const [videoPlaying, setVideoPlaying] = useState(false);
   const [videoCurrentTime, setVideoCurrentTime] = useState<number | null>(null);
-  const [videoTranscript, setVideoTranscript] = useState<TranscriptSegment[]>([]);
+  const [videoTranscript, setVideoTranscript] = useState<TranscriptSegment[]>(
+    []
+  );
 
   /**
    * Utility for formatting the timing of logs
@@ -171,12 +179,12 @@ export function ConsolePage() {
    * When you click the API key
    */
   const resetAPIKey = useCallback(() => {
-    const apiKey = prompt('OpenAI API Key');
-    if (apiKey !== null) {
-      localStorage.clear();
-      localStorage.setItem('tmp::voice_api_key', apiKey);
-      window.location.reload();
-    }
+    // const apiKey = prompt('OpenAI API Key');
+    // if (apiKey !== null) {
+    //   localStorage.clear();
+    //   localStorage.setItem('tmp::voice_api_key', apiKey);
+    //   window.location.reload();
+    // }
   }, []);
 
   /**
@@ -248,7 +256,14 @@ export function ConsolePage() {
    * In push-to-talk mode, start recording
    * .appendInputAudio() for each sample
    */
-  const startRecording = async () => {
+  const startRecording = useCallback(async () => {
+    if (!reactPlayerRef?.current) return;
+
+    const currentVideoTime = reactPlayerRef?.current?.getCurrentTime();
+
+    setVideoPlaying(false);
+    setVideoCurrentTime(currentVideoTime);
+
     setIsRecording(true);
     const client = clientRef.current;
     const wavRecorder = wavRecorderRef.current;
@@ -259,12 +274,15 @@ export function ConsolePage() {
       await client.cancelResponse(trackId, offset);
     }
     await wavRecorder.record((data) => client.appendInputAudio(data.mono));
-  };
+  }, [reactPlayerRef]);
 
   /**
    * In push-to-talk mode, stop recording
    */
   const stopRecording = async () => {
+    setTimeout(() => {
+      setVideoPlaying(true);
+    }, 200);
     setIsRecording(false);
     const client = clientRef.current;
     const wavRecorder = wavRecorderRef.current;
@@ -292,13 +310,14 @@ export function ConsolePage() {
 
   /**
    * Get the video transcript
-   *  */ 
+   *  */
   const getTranscript = async (videoId: string) => {
-    const response = await fetch(`https://api.clipping.ai/miscelaneous/youtube_vtt?video_url=https://www.youtube.com/watch?v=${videoId}`);
+    const response = await fetch(
+      `https://api.clipping.ai/miscelaneous/youtube_vtt?video_url=https://www.youtube.com/watch?v=${videoId}`
+    );
     const data = await response.json();
     setVideoTranscript(data);
-  }
-
+  };
 
   /**
    * Alterar o embed do vídeo e carregar Transcript
@@ -307,7 +326,6 @@ export function ConsolePage() {
     if (videoId) {
       getTranscript(videoId);
     }
-      
   }, [videoId]);
 
   /**
@@ -455,19 +473,22 @@ export function ConsolePage() {
     client.addTool(
       {
         name: 'get_video_transcript',
-        description: 'Gets the transcript of the current video. Just the context window of a few minutes until the current time.',
+        description:
+          'Gets the transcript of the current video. Just the context window of a few minutes until the current time.',
         parameters: {
           type: 'object',
-          properties: {
-          },
+          properties: {},
           required: [],
         },
       },
       async () => {
         const filtered_transcript = videoTranscript.filter(function (item) {
-          return item.start_time_ms <= (videoCurrentTime || 0) || item.end_time_ms >= (videoCurrentTime || 0) - 240000; 
+          return (
+            item.start_time_ms <= (videoCurrentTime || 0) ||
+            item.end_time_ms >= (videoCurrentTime || 0) - 240000
+          );
         });
-        return JSON.stringify(filtered_transcript); 
+        return JSON.stringify(filtered_transcript);
       }
     );
 
@@ -541,9 +562,38 @@ export function ConsolePage() {
       <div className="content-main">
         <div className="content-logs">
           <div className="content-block video">
-            <div className="content-block-title">Video: Título</div>
+            <div className="content-block-video-url">
+              <input
+                value={videoUrlInput}
+                onChange={(ev) => {
+                  setVideoUrlInput(ev.target.value);
+                }}
+                placeholder="Insira a URL do vídeo"
+              />
+              <Button
+                label="Pequisar"
+                icon={Search}
+                onClick={() => {
+                  if (!videoUrlInput) return;
+                  const url = new URL(videoUrlInput);
+                  setVideoUrl(new URL(videoUrlInput));
+                  setVideoId(url.searchParams.get('v'));
+                }}
+              />
+            </div>
+            {/* <div className="content-block-title">Video: Título</div> */}
             <div className="content-block-body" ref={eventsScrollRef}>
-              Vídeo ID to be embeded: {videoId}. If videoId is null, show a text input to enter the video Id
+              {videoUrl && videoId && (
+                <ReactPlayer
+                  ref={reactPlayerRef}
+                  playing={videoPlaying}
+                  onPlay={() => setVideoPlaying(true)}
+                  url={videoUrl?.toString()}
+                  width={'100%'}
+                  height={'100%'}
+                  style={{ borderRadius: '16px' }}
+                />
+              )}
             </div>
           </div>
           <div className="content-block conversation">
@@ -618,15 +668,15 @@ export function ConsolePage() {
               onChange={(_, value) => changeTurnEndType(value)}
             />
             <div className="spacer" />
-            {isConnected && canPushToTalk && (
-              <Button
-                label={isRecording ? 'release to send' : 'push to talk'}
-                buttonStyle={isRecording ? 'alert' : 'regular'}
-                disabled={!isConnected || !canPushToTalk}
-                onMouseDown={startRecording}
-                onMouseUp={stopRecording}
-              />
-            )}
+            {/* {isConnected && canPushToTalk && ( */}
+            <Button
+              label={isRecording ? 'release to send' : 'push to talk'}
+              buttonStyle={isRecording ? 'alert' : 'regular'}
+              // disabled={!isConnected || !canPushToTalk}
+              onMouseDown={startRecording}
+              onMouseUp={stopRecording}
+            />
+            {/* )} */}
             <div className="spacer" />
             <Button
               label={isConnected ? 'disconnect' : 'connect'}
