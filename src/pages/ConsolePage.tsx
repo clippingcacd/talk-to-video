@@ -179,12 +179,12 @@ export function ConsolePage() {
    * When you click the API key
    */
   const resetAPIKey = useCallback(() => {
-    // const apiKey = prompt('OpenAI API Key');
-    // if (apiKey !== null) {
-    //   localStorage.clear();
-    //   localStorage.setItem('tmp::voice_api_key', apiKey);
-    //   window.location.reload();
-    // }
+    const apiKey = prompt('OpenAI API Key');
+    if (apiKey !== null) {
+      localStorage.clear();
+      localStorage.setItem('tmp::voice_api_key', apiKey);
+      window.location.reload();
+    }
   }, []);
 
   /**
@@ -668,15 +668,15 @@ export function ConsolePage() {
               onChange={(_, value) => changeTurnEndType(value)}
             />
             <div className="spacer" />
-            {/* {isConnected && canPushToTalk && ( */}
-            <Button
-              label={isRecording ? 'release to send' : 'push to talk'}
-              buttonStyle={isRecording ? 'alert' : 'regular'}
-              // disabled={!isConnected || !canPushToTalk}
-              onMouseDown={startRecording}
-              onMouseUp={stopRecording}
-            />
-            {/* )} */}
+            {isConnected && canPushToTalk && (
+              <Button
+                label={isRecording ? 'release to send' : 'push to talk'}
+                buttonStyle={isRecording ? 'alert' : 'regular'}
+                disabled={!isConnected || !canPushToTalk}
+                onMouseDown={startRecording}
+                onMouseUp={stopRecording}
+              />
+            )}
             <div className="spacer" />
             <Button
               label={isConnected ? 'disconnect' : 'connect'}
