@@ -264,6 +264,8 @@ export function ConsolePage() {
     setVideoPlaying(false);
     setVideoCurrentTime(currentVideoTime);
 
+    console.log('currentVideoTime', currentVideoTime);
+
     setIsRecording(true);
     const client = clientRef.current;
     const wavRecorder = wavRecorderRef.current;
@@ -308,25 +310,29 @@ export function ConsolePage() {
     setCanPushToTalk(value === 'none');
   };
 
-  /**
-   * Get the video transcript
-   *  */
-  const getTranscript = async (videoId: string) => {
-    const response = await fetch(
-      `https://api.clipping.ai/miscelaneous/youtube_vtt?video_url=https://www.youtube.com/watch?v=${videoId}`
-    );
-    const data = await response.json();
-    setVideoTranscript(data);
-  };
+
 
   /**
    * Alterar o embed do vídeo e carregar Transcript
    */
   useEffect(() => {
-    if (videoId) {
-      getTranscript(videoId);
-    }
+    const fetchTranscript = async () => {  // Make it an async function
+      if (videoId) {
+        const response = await fetch(
+          `https://api.clipping.ai/miscelaneous/youtube_vtt?video_url=https://www.youtube.com/watch?v=${videoId}`
+        );
+        const data = await response.json();
+        const transcriptData: TranscriptSegment[] = data as TranscriptSegment[]; // Good practice: explicit type assertion
+        setVideoTranscript(transcriptData); 
+      }
+    };
+  
+    fetchTranscript(); // Call the async function
   }, [videoId]);
+
+  useEffect(() => {
+    console.log('videoTranscript STATE ===>', videoTranscript);
+  }, [videoTranscript]);
 
   /**
    * Auto-scroll the event logs
@@ -482,13 +488,26 @@ export function ConsolePage() {
         },
       },
       async () => {
-        const filtered_transcript = videoTranscript.filter(function (item) {
-          return (
-            item.start_time_ms <= (videoCurrentTime || 0) ||
-            item.end_time_ms >= (videoCurrentTime || 0) - 240000
-          );
+
+        console.log('videoTranscript caught by the TOOL', videoTranscript);
+        
+        const currentVideoTime = (reactPlayerRef?.current?.getCurrentTime() || 0) * 1000;
+
+        console.log('currentVideoTime', currentVideoTime); 
+
+        if (!currentVideoTime || !videoTranscript.length) {
+          return ""; // Or a suitable message like "No transcript available"
+        }
+    
+        const threeMinutesAgo = currentVideoTime - (0.5 * 60 * 1000); // half minutes in milliseconds
+        console.log('currentVideoTime', currentVideoTime);
+        const filteredTranscript = videoTranscript.filter(item => {
+          return item.end_time_ms >= threeMinutesAgo && item.start_time_ms <= currentVideoTime;
         });
-        return JSON.stringify(filtered_transcript);
+    
+        const concatenatedText = filteredTranscript.map(item => item.text).join(" ");
+        console.log('concatenatedText', concatenatedText);
+        return concatenatedText; // Return the string directly, no need for JSON.stringify
       }
     );
 
@@ -535,7 +554,7 @@ export function ConsolePage() {
       // cleanup; resets to defaults
       client.reset();
     };
-  }, []);
+  }, [videoTranscript]);
 
   /**
    * Render the application
