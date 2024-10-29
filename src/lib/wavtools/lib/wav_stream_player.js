@@ -19,6 +19,22 @@ export class WavStreamPlayer {
     this.analyser = null;
     this.trackSampleOffsets = {};
     this.interruptedTrackIds = {};
+    this._onAudioStreamEndedCallback = null;
+  }
+
+  /**
+   * Sets the callback for when the audio stream ends
+   * @param {Function} onAudioStreamEndedCallback - Callback to execute when the stream ends
+   */
+  onAudioStreamEnded(onAudioStreamEndedCallback) {
+    if (
+      onAudioStreamEndedCallback &&
+      typeof onAudioStreamEndedCallback === 'function'
+    ) {
+      this._onAudioStreamEndedCallback = onAudioStreamEndedCallback;
+    } else {
+      throw new Error('Callback must be a function');
+    }
   }
 
   /**
@@ -78,8 +94,14 @@ export class WavStreamPlayer {
     streamNode.connect(this.context.destination);
     streamNode.port.onmessage = (e) => {
       const { event } = e.data;
+
       if (event === 'stop') {
         streamNode.disconnect();
+
+        if (typeof this._onAudioStreamEndedCallback === 'function') {
+          this._onAudioStreamEndedCallback();
+        }
+
         this.stream = null;
       } else if (event === 'offset') {
         const { requestId, trackId, offset } = e.data;
