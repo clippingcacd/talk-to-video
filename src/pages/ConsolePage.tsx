@@ -219,7 +219,13 @@ export function ConsolePage() {
     ]);
 
     if (client.getTurnDetectionType() === 'server_vad') {
-      await wavRecorder.record((data) => client.appendInputAudio(data.mono));
+      await wavRecorder.record((data) => {
+        try {
+          client.appendInputAudio(data.mono);
+        } catch (error) {
+          console.error('@connectConversation', error);
+        }
+      });
     }
   }, []);
 
@@ -275,16 +281,19 @@ export function ConsolePage() {
       const { trackId, offset } = trackSampleOffset;
       await client.cancelResponse(trackId, offset);
     }
-    await wavRecorder.record((data) => client.appendInputAudio(data.mono));
+    await wavRecorder.record((data) => {
+      try {
+        client.appendInputAudio(data.mono);
+      } catch (error) {
+        console.error('@startRecording', error);
+      }
+    });
   }, [reactPlayerRef]);
 
   /**
    * In push-to-talk mode, stop recording
    */
   const stopRecording = async () => {
-    setTimeout(() => {
-      setVideoPlaying(true);
-    }, 200);
     setIsRecording(false);
     const client = clientRef.current;
     const wavRecorder = wavRecorderRef.current;
@@ -305,28 +314,33 @@ export function ConsolePage() {
       turn_detection: value === 'none' ? null : { type: 'server_vad' },
     });
     if (value === 'server_vad' && client.isConnected()) {
-      await wavRecorder.record((data) => client.appendInputAudio(data.mono));
+      await wavRecorder.record((data) => {
+        try {
+          client.appendInputAudio(data.mono);
+        } catch (error) {
+          console.error('@changeTurnEndType', error);
+        }
+      });
     }
     setCanPushToTalk(value === 'none');
   };
-
-
 
   /**
    * Alterar o embed do vídeo e carregar Transcript
    */
   useEffect(() => {
-    const fetchTranscript = async () => {  // Make it an async function
+    const fetchTranscript = async () => {
+      // Make it an async function
       if (videoId) {
         const response = await fetch(
           `https://api.clipping.ai/miscelaneous/youtube_vtt?video_url=https://www.youtube.com/watch?v=${videoId}`
         );
         const data = await response.json();
         const transcriptData: TranscriptSegment[] = data as TranscriptSegment[]; // Good practice: explicit type assertion
-        setVideoTranscript(transcriptData); 
+        setVideoTranscript(transcriptData);
       }
     };
-  
+
     fetchTranscript(); // Call the async function
   }, [videoId]);
 
@@ -488,24 +502,29 @@ export function ConsolePage() {
         },
       },
       async () => {
-
         console.log('videoTranscript caught by the TOOL', videoTranscript);
-        
-        const currentVideoTime = (reactPlayerRef?.current?.getCurrentTime() || 0) * 1000;
 
-        console.log('currentVideoTime', currentVideoTime); 
+        const currentVideoTime =
+          (reactPlayerRef?.current?.getCurrentTime() || 0) * 1000;
+
+        console.log('currentVideoTime', currentVideoTime);
 
         if (!currentVideoTime || !videoTranscript.length) {
-          return ""; // Or a suitable message like "No transcript available"
+          return ''; // Or a suitable message like "No transcript available"
         }
-    
-        const threeMinutesAgo = currentVideoTime - (0.5 * 60 * 1000); // half minutes in milliseconds
+
+        const threeMinutesAgo = currentVideoTime - 0.5 * 60 * 1000; // half minutes in milliseconds
         console.log('currentVideoTime', currentVideoTime);
-        const filteredTranscript = videoTranscript.filter(item => {
-          return item.end_time_ms >= threeMinutesAgo && item.start_time_ms <= currentVideoTime;
+        const filteredTranscript = videoTranscript.filter((item) => {
+          return (
+            item.end_time_ms >= threeMinutesAgo &&
+            item.start_time_ms <= currentVideoTime
+          );
         });
-    
-        const concatenatedText = filteredTranscript.map(item => item.text).join(" ");
+
+        const concatenatedText = filteredTranscript
+          .map((item) => item.text)
+          .join(' ');
         console.log('concatenatedText', concatenatedText);
         return concatenatedText; // Return the string directly, no need for JSON.stringify
       }
@@ -534,9 +553,14 @@ export function ConsolePage() {
     });
     client.on('conversation.updated', async ({ item, delta }: any) => {
       const items = client.conversation.getItems();
-      if (delta?.audio) {
+      if (delta?.audio) { 
+        wavStreamPlayer.onAudioStreamEnded(() => {
+          setVideoPlaying(true);
+        });
+
         wavStreamPlayer.add16BitPCM(delta.audio, item.id);
       }
+
       if (item.status === 'completed' && item.formatted.audio?.length) {
         const wavFile = await WavRecorder.decode(
           item.formatted.audio,
